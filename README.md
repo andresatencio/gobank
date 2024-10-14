@@ -1,0 +1,1 @@
+Based on [How To Build A Complete JSON API In Golang (JWT, Postgres, and Docker)](https://www.youtube.com/watch?v=pwZuNmAzaH8&list=PL0xRBLFXXsP6nudFDqMXzrvQCZrxSOm-2)
