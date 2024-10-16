@@ -1,9 +1,22 @@
 package main
 
-import "fmt"
+import (
+	"log"
+)
 
 func main() {
-	server := NewAPIServer(":3000")
+
+	store, err := NewSQLiteStore()
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := store.Init(); err != nil {
+		log.Fatal(err)
+	}
+
+	server := NewAPIServer(":3000", store)
 	server.Run()
-	fmt.Println("hello 2")
+
 }
