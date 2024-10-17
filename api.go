@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 
+	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/mux"
 )
 
@@ -46,8 +47,10 @@ func (s *APIServer) Run() {
 	router := mux.NewRouter()
 
 	router.HandleFunc("/account", makeHTTPHandleFunc(s.handleAccount))
-	router.HandleFunc("/account/{id}", makeHTTPHandleFunc(s.handleGetAccountByID))
-	router.HandleFunc("/account/{id}", makeHTTPHandleFunc(s.handleGetAccountByID))
+	router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleGetAccountByID)))
+
+	router.HandleFunc("/transfer", makeHTTPHandleFunc(s.handleTransfer))
+	router.HandleFunc("/token", makeHTTPHandleFunc(s.handleTransfer))
 
 	log.Println("JSON API Server running on port: ", s.listenAddr)
 
@@ -100,10 +103,20 @@ func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) 
 	}
 
 	account := NewAccount(createAccountRequest.FirstName, createAccountRequest.LastName)
-	if err := s.store.CreateAccount(account); err != nil {
+	id, err := s.store.CreateAccount(account)
+
+	if err != nil {
 		return err
 	}
-	return WriteJSON(w, http.StatusOK, account)
+
+	account.ID = id
+	token, err := createJWT(account)
+
+	if err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusOK, map[string]string{"token": token})
 }
 
 func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
@@ -124,7 +137,14 @@ func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *APIServer) handleTransfer(w http.ResponseWriter, r *http.Request) error {
-	return nil
+	transferRequest := &TranseferRequest{}
+
+	if err := json.NewDecoder(r.Body).Decode(transferRequest); err != nil {
+		return err
+	}
+	defer r.Body.Close()
+
+	return WriteJSON(w, http.StatusOK, transferRequest)
 }
 
 func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) error {
@@ -147,4 +167,74 @@ func getID(r *http.Request) (int, error) {
 	}
 
 	return id, nil
+}
+
+func withJWTAuth(handlerFunc http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("With JWT Auth middleware")
+		tokenString := r.Header.Get("x-jwt-token")
+		if len(tokenString) == 0 {
+			WriteJSON(w, http.StatusForbidden, ApiError{Error: "token not valid"})
+			return
+		}
+
+		token, err := validateJWT(tokenString)
+
+		if err != nil || !token.Valid {
+			WriteJSON(w, http.StatusForbidden, ApiError{Error: "token not valid"})
+			return
+		}
+
+		claims := token.Claims.(*MyCustomClaims)
+
+		id, err := getID(r)
+
+		if err != nil {
+			WriteJSON(w, http.StatusForbidden, ApiError{Error: err.Error()})
+			return
+		}
+
+		if claims.AccountID != id {
+			WriteJSON(w, http.StatusForbidden, ApiError{Error: "JWT not match with ID"})
+			return
+		}
+
+		handlerFunc(w, r)
+	}
+}
+
+type MyCustomClaims struct {
+	AccountNumber int64 `json:"accountNumber"`
+	AccountID     int   `json:"id"`
+	jwt.RegisteredClaims
+}
+
+const secret = "shh"
+
+func validateJWT(tokenString string) (*jwt.Token, error) {
+	token, err := jwt.ParseWithClaims(tokenString, &MyCustomClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return []byte(secret), nil
+	})
+	if err != nil {
+		log.Fatal(err)
+	} else if claims, ok := token.Claims.(*MyCustomClaims); ok {
+		fmt.Println(claims.AccountNumber, claims.RegisteredClaims.Issuer)
+	} else {
+		log.Fatal("unknown claims type, cannot proceed")
+	}
+	return token, err
+}
+
+func createJWT(account *Account) (string, error) {
+
+	mySigningKey := []byte(secret)
+
+	// Create the Claims
+	claims := &MyCustomClaims{
+		AccountNumber: account.Number,
+		AccountID:     account.ID,
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(mySigningKey)
 }

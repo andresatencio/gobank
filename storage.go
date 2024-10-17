@@ -8,7 +8,7 @@ import (
 )
 
 type Storage interface {
-	CreateAccount(*Account) error
+	CreateAccount(*Account) (int, error)
 	DeleteAccount(int) error
 	UpdateAccount(*Account) error
 	GetAccounts() ([]*Account, error)
@@ -54,11 +54,11 @@ func (s *SQLiteStore) CreateTable() error {
 	return err
 }
 
-func (s *SQLiteStore) CreateAccount(acc *Account) error {
+func (s *SQLiteStore) CreateAccount(acc *Account) (int, error) {
 	query := `insert into 
 		accounts (first_name, last_name, number, balance, created_at)
-		values (?, ?, ?, ?, ?)`
-	_, err := s.db.Exec(
+		values (?, ?, ?, ?, ?) RETURNING id`
+	result, err := s.db.Exec(
 		query,
 		acc.FirstName,
 		acc.LastName,
@@ -67,11 +67,14 @@ func (s *SQLiteStore) CreateAccount(acc *Account) error {
 		acc.CreatedAt,
 	)
 
+	// review
 	if err != nil {
-		return err
+		return 0, err
 	}
 
-	return nil
+	id, err := result.LastInsertId()
+
+	return int(id), err
 }
 
 func (s *SQLiteStore) DeleteAccount(id int) error {
