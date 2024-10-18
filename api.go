@@ -174,14 +174,14 @@ func withJWTAuth(handlerFunc http.HandlerFunc) http.HandlerFunc {
 		fmt.Println("With JWT Auth middleware")
 		tokenString := r.Header.Get("x-jwt-token")
 		if len(tokenString) == 0 {
-			WriteJSON(w, http.StatusForbidden, ApiError{Error: "token not valid"})
+			permissionDenied(w)
 			return
 		}
 
 		token, err := validateJWT(tokenString)
 
 		if err != nil || !token.Valid {
-			WriteJSON(w, http.StatusForbidden, ApiError{Error: "token not valid"})
+			permissionDenied(w)
 			return
 		}
 
@@ -190,12 +190,12 @@ func withJWTAuth(handlerFunc http.HandlerFunc) http.HandlerFunc {
 		id, err := getID(r)
 
 		if err != nil {
-			WriteJSON(w, http.StatusForbidden, ApiError{Error: err.Error()})
+			permissionDenied(w)
 			return
 		}
 
 		if claims.AccountID != id {
-			WriteJSON(w, http.StatusForbidden, ApiError{Error: "JWT not match with ID"})
+			permissionDenied(w)
 			return
 		}
 
@@ -237,4 +237,8 @@ func createJWT(account *Account) (string, error) {
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString(mySigningKey)
+}
+
+func permissionDenied(w http.ResponseWriter) {
+	WriteJSON(w, http.StatusForbidden, ApiError{Error: "permission denied"})
 }
