@@ -8,7 +8,6 @@ import (
 	"strconv"
 
 	jwt "github.com/golang-jwt/jwt/v5"
-	"github.com/gorilla/mux"
 )
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
@@ -44,13 +43,14 @@ func NewAPIServer(listenAddr string, store Storage) *APIServer {
 }
 
 func (s *APIServer) Run() {
-	router := mux.NewRouter()
+	router := http.NewServeMux()
 
-	router.HandleFunc("/account", makeHTTPHandleFunc(s.handleAccount))
-	router.HandleFunc("/account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleGetAccountByID)))
+	router.HandleFunc("POST /account", makeHTTPHandleFunc(s.handleCreateAccount))
+	router.HandleFunc("GET /account", makeHTTPHandleFunc(s.handleGetAccount))
+	router.HandleFunc("GET /account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleGetAccountByID)))
+	router.HandleFunc("DELETE /account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleDeleteAccount)))
 
-	router.HandleFunc("/transfer", makeHTTPHandleFunc(s.handleTransfer))
-	router.HandleFunc("/token", makeHTTPHandleFunc(s.handleTransfer))
+	router.HandleFunc("POST /transfer", makeHTTPHandleFunc(s.handleTransfer))
 
 	log.Println("JSON API Server running on port: ", s.listenAddr)
 
@@ -73,27 +73,19 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *APIServer) handleGetAccountByID(w http.ResponseWriter, r *http.Request) error {
-	if r.Method == "GET" {
-		id, err := getID(r)
+	id, err := getID(r)
 
-		if err != nil {
-			return err
-		}
-
-		account, err := s.store.GetAccountByID(id)
-
-		if err != nil {
-			return err
-		}
-
-		return WriteJSON(w, http.StatusOK, account)
+	if err != nil {
+		return err
 	}
 
-	if r.Method == "DELETE" {
-		return s.handleDeleteAccount(w, r)
+	account, err := s.store.GetAccountByID(id)
+
+	if err != nil {
+		return err
 	}
 
-	return fmt.Errorf("method not allowed %s", r.Method)
+	return WriteJSON(w, http.StatusOK, account)
 }
 
 func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
@@ -158,7 +150,7 @@ func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) err
 }
 
 func getID(r *http.Request) (int, error) {
-	idStr := mux.Vars(r)["id"]
+	idStr := r.PathValue("id")
 
 	id, err := strconv.Atoi(idStr)
 
