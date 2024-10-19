@@ -47,7 +47,7 @@ func (s *APIServer) Run() {
 
 	router.HandleFunc("POST /account", makeHTTPHandleFunc(s.handleCreateAccount))
 	router.HandleFunc("GET /account", makeHTTPHandleFunc(s.handleGetAccount))
-	router.HandleFunc("GET /account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleGetAccountByID)))
+	router.HandleFunc("GET /account/{id}", withJWTAuthStorage(makeHTTPHandleFunc(s.handleGetAccountByID), s.store))
 	router.HandleFunc("DELETE /account/{id}", withJWTAuth(makeHTTPHandleFunc(s.handleDeleteAccount)))
 
 	router.HandleFunc("POST /transfer", makeHTTPHandleFunc(s.handleTransfer))
@@ -73,6 +73,7 @@ func (s *APIServer) handleAccount(w http.ResponseWriter, r *http.Request) error 
 }
 
 func (s *APIServer) handleGetAccountByID(w http.ResponseWriter, r *http.Request) error {
+
 	id, err := getID(r)
 
 	if err != nil {
@@ -150,6 +151,7 @@ func (s *APIServer) handleGetAccount(w http.ResponseWriter, r *http.Request) err
 }
 
 func getID(r *http.Request) (int, error) {
+
 	idStr := r.PathValue("id")
 
 	id, err := strconv.Atoi(idStr)
@@ -187,6 +189,47 @@ func withJWTAuth(handlerFunc http.HandlerFunc) http.HandlerFunc {
 		}
 
 		if claims.AccountID != id {
+			permissionDenied(w)
+			return
+		}
+
+		handlerFunc(w, r)
+	}
+}
+
+func withJWTAuthStorage(handlerFunc http.HandlerFunc, s Storage) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("With JWT Auth middleware")
+		tokenString := r.Header.Get("x-jwt-token")
+		if len(tokenString) == 0 {
+			permissionDenied(w)
+			return
+		}
+
+		token, err := validateJWT(tokenString)
+
+		if err != nil || !token.Valid {
+			permissionDenied(w)
+			return
+		}
+
+		claims := token.Claims.(*MyCustomClaims)
+
+		id, err := getID(r)
+
+		if err != nil {
+			permissionDenied(w)
+			return
+		}
+
+		account, err := s.GetAccountByID(id)
+
+		if err != nil {
+			permissionDenied(w)
+			return
+		}
+
+		if claims.AccountNumber != account.Number {
 			permissionDenied(w)
 			return
 		}
