@@ -13,6 +13,7 @@ type Storage interface {
 	UpdateAccount(*Account) error
 	GetAccounts() ([]*Account, error)
 	GetAccountByID(int) (*Account, error)
+	GetAccountByNumber(int) (*Account, error)
 }
 
 type SQLiteStore struct {
@@ -45,6 +46,7 @@ func (s *SQLiteStore) CreateTable() error {
 		first_name varchar(50),
 		last_name varchar(50),
 		number integer,
+		encrypted_password varchar(50),
 		balance integer,
 		created_at timestamp
 	)`
@@ -56,13 +58,14 @@ func (s *SQLiteStore) CreateTable() error {
 
 func (s *SQLiteStore) CreateAccount(acc *Account) (int, error) {
 	query := `insert into 
-		accounts (first_name, last_name, number, balance, created_at)
-		values (?, ?, ?, ?, ?) RETURNING id`
+		accounts (first_name, last_name, number, encrypted_password, balance, created_at)
+		values (?, ?, ?, ?, ?, ?) RETURNING id`
 	result, err := s.db.Exec(
 		query,
 		acc.FirstName,
 		acc.LastName,
 		acc.Number,
+		acc.EncryptedPassword,
 		acc.Balance,
 		acc.CreatedAt,
 	)
@@ -95,7 +98,8 @@ func (s *SQLiteStore) GetAccountByID(id int) (*Account, error) {
 		id, 
 		first_name, 
 		last_name, 
-		number, 
+		number,
+		ecrypted_password, 
 		balance, 
 		created_at 
 		from accounts
@@ -124,6 +128,7 @@ func (s *SQLiteStore) GetAccounts() ([]*Account, error) {
 		last_name, 
 		number, 
 		balance, 
+		encrypted_password,
 		created_at 
 		from accounts`
 
@@ -154,10 +159,38 @@ func scanIntoAccount(rows *sql.Rows) (*Account, error) {
 		&account.FirstName,
 		&account.LastName,
 		&account.Number,
+		&account.EncryptedPassword,
 		&account.Balance,
 		&account.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return account, nil
+}
+
+func (s *SQLiteStore) GetAccountByNumber(number int) (*Account, error) {
+	query := `select 
+		id, 
+		first_name, 
+		last_name, 
+		number, 
+		encrypted_password,
+		balance, 
+		created_at 
+		from accounts
+		where number = ?`
+
+	rows, err := s.db.Query(query, number)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	for rows.Next() {
+		return scanIntoAccount(rows)
+	}
+
+	return nil, fmt.Errorf("account %d not found", number)
 }

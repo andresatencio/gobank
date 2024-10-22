@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	jwt "github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func WriteJSON(w http.ResponseWriter, status int, v any) error {
@@ -52,6 +53,8 @@ func (s *APIServer) Run() {
 
 	router.HandleFunc("POST /transfer", makeHTTPHandleFunc(s.handleTransfer))
 
+	router.HandleFunc("POST /login", makeHTTPHandleFunc(s.handleLogin))
+
 	log.Println("JSON API Server running on port: ", s.listenAddr)
 
 	http.ListenAndServe(s.listenAddr, router)
@@ -90,26 +93,24 @@ func (s *APIServer) handleGetAccountByID(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *APIServer) handleCreateAccount(w http.ResponseWriter, r *http.Request) error {
-	createAccountRequest := CreateAccountRequest{}
-	if err := json.NewDecoder(r.Body).Decode(&createAccountRequest); err != nil {
+	var req CreateAccountRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		return err
 	}
 
-	account := NewAccount(createAccountRequest.FirstName, createAccountRequest.LastName)
-	id, err := s.store.CreateAccount(account)
+	account, err := NewAccount(req.FirstName, req.LastName, req.Password)
 
 	if err != nil {
 		return err
 	}
 
-	account.ID = id
-	token, err := createJWT(account)
+	_, err = s.store.CreateAccount(account)
 
 	if err != nil {
 		return err
 	}
 
-	return WriteJSON(w, http.StatusOK, map[string]string{"token": token})
+	return WriteJSON(w, http.StatusOK, account)
 }
 
 func (s *APIServer) handleDeleteAccount(w http.ResponseWriter, r *http.Request) error {
@@ -276,4 +277,33 @@ func createJWT(account *Account) (string, error) {
 
 func permissionDenied(w http.ResponseWriter) {
 	WriteJSON(w, http.StatusForbidden, ApiError{Error: "permission denied"})
+}
+
+func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		return err
+	}
+
+	account, err := s.store.GetAccountByNumber(int(req.Number))
+
+	if err != nil {
+		return err
+	}
+
+	err = bcrypt.CompareHashAndPassword([]byte(account.EncryptedPassword), []byte(req.Password))
+
+	if err != nil {
+		permissionDenied(w)
+		fmt.Printf("%+v", err)
+		return err
+	}
+
+	token, err := createJWT(account)
+
+	if err != nil {
+		return err
+	}
+
+	return WriteJSON(w, http.StatusOK, map[string]string{"token": token})
 }
