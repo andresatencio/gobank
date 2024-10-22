@@ -296,7 +296,7 @@ func (s *APIServer) handleLogin(w http.ResponseWriter, r *http.Request) error {
 	if err != nil {
 		permissionDenied(w)
 		fmt.Printf("%+v", err)
-		return err
+		return nil
 	}
 
 	token, err := createJWT(account)
